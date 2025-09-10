@@ -3,13 +3,14 @@ package series_tracker.model;
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Entity
 public class Series {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    private Long chatId;
 
     private String name;
     private int season;
@@ -79,5 +80,13 @@ public class Series {
 
     public void setLastWatched(LocalDate lastWatched) {
         this.lastWatched = lastWatched;
+    }
+
+    public Long getChatId() {
+        return chatId;
+    }
+
+    public void setChatId(Long chatId) {
+        this.chatId = chatId;
     }
 }

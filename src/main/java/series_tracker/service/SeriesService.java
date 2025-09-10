@@ -20,9 +20,10 @@ public class SeriesService {
     }
 
     //добавить сериал
-    public Series addSeries(String name) {
+    public Series addSeries(String name, Long chatId) {
         Series series = new Series();
         series.setName(name);
+        series.setChatId(chatId);
         return repo.save(series);
     }
 
@@ -41,6 +42,8 @@ public class SeriesService {
         if (optionalSeries.isPresent()) {
             Series series = optionalSeries.get();
             series.setSeason(season);
+            series.setEpisode(1);
+            series.setLastWatched(LocalDate.now());
             repo.save(series);
         }
     }
@@ -50,6 +53,7 @@ public class SeriesService {
         if (optionalSeries.isPresent()) {
             Series series = optionalSeries.get();
             series.setEpisode(episode);
+            series.setLastWatched(LocalDate.now());
             repo.save(series);
         }
     }
@@ -60,6 +64,7 @@ public class SeriesService {
         if (optionalSeries.isPresent()) {
             Series series = optionalSeries.get();
             series.setFinished(true);
+            series.setLastWatched(LocalDate.now());
             repo.save(series);
         }
     }
@@ -75,17 +80,26 @@ public class SeriesService {
     }
 
     //показать список сериалов в процессе
-    public List<Series> getInProgress() {
+    public List<Series> getInProgressByChatId(Long chatId) {
         return repo.findAll().stream()
-                .filter(s -> !s.isFinished())
+                .filter(s -> !s.isFinished() && chatId.equals(s.getChatId()))
                 .toList();
     }
 
     //показать список просмотренных сериалов
-    public List<Series> getFinished() {
+    public List<Series> getFinishedByChatId(Long chatId) {
         return repo.findAll().stream()
-                .filter(Series::isFinished)
+                .filter(s -> s.isFinished() && chatId.equals(s.getChatId()))
                 .toList();
+    }
+
+    public Series findByName(String name) {
+        return repo.findByName(name);
+    }
+
+    public Series findById(Long id) {
+        return repo.findById(id).orElseThrow(() ->
+                new IllegalArgumentException("Сериал с id " + id + " не найден"));
     }
 
 }
