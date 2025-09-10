@@ -2,6 +2,7 @@ package series_tracker.bot;
 
 import org.jvnet.hk2.annotations.Service;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
@@ -13,16 +14,30 @@ import series_tracker.service.SeriesService;
 
 import java.util.List;
 
-@Service
+@Component
 public class SeriesBot extends TelegramLongPollingBot {
 
     private final SeriesService seriesService;
 
+    public SeriesBot(SeriesService seriesService) {
+        this.seriesService = seriesService;
+    }
+
+
+    @Value("${telegram.bot.username}")
+    private String botUsername;
+
     @Value("${telegram.bot.token}")
     private String botToken;
 
-    public SeriesBot(SeriesService seriesService) {
-        this.seriesService = seriesService;
+    @Override
+    public String getBotUsername() {
+        return botUsername;
+    }
+
+    @Override
+    public String getBotToken() {
+        return botToken;
     }
 
     @Override
@@ -216,10 +231,5 @@ public class SeriesBot extends TelegramLongPollingBot {
             }
             default -> sendMessage(chatId, "Неизвестное действие");
         }
-    }
-
-    @Override
-    public String getBotUsername() {
-        return "";
     }
 }
