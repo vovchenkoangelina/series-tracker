@@ -81,17 +81,49 @@ public class SeriesBot extends TelegramLongPollingBot {
         if (text.contains("сезон")) {
             String name = text.substring(0, text.indexOf("сезон") - 1);
             int season = Integer.parseInt(text.substring(text.lastIndexOf(" ") + 1));
-            seriesService.checkSeason(seriesService.findByName(name).getId(), season);
-            sendMessage(chatId, "Принято!");
-            return;
+
+            seriesService.findByNameOptional(name, chatId)
+                    .ifPresentOrElse(
+                            s -> {
+                                seriesService.checkSeason(s.getId(), season, chatId);
+                                try {
+                                    sendMessage(chatId, "Принято!");
+                                } catch (TelegramApiException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            },
+                            () -> {
+                                try {
+                                    sendMessage(chatId, "Сериал не найден");
+                                } catch (TelegramApiException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                    );
         }
 
         if (text.contains("серия")) {
             String name = text.substring(0, text.indexOf("серия") - 1);
             int episode = Integer.parseInt(text.substring(text.lastIndexOf(" ") + 1));
-            seriesService.checkEpisode(seriesService.findByName(name).getId(), episode);
-            sendMessage(chatId, "Принято!");
-            return;
+
+            seriesService.findByNameOptional(name, chatId)
+                    .ifPresentOrElse(
+                            s -> {
+                                seriesService.checkEpisode(s.getId(), episode, chatId);
+                                try {
+                                    sendMessage(chatId, "Принято!");
+                                } catch (TelegramApiException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            },
+                            () -> {
+                                try {
+                                    sendMessage(chatId, "Сериал не найден");
+                                } catch (TelegramApiException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                    );
         }
 
         switch (text) {
@@ -109,7 +141,7 @@ public class SeriesBot extends TelegramLongPollingBot {
                 } else {
                     StringBuilder sb = new StringBuilder("Просмотренные сериалы:\n");
                     for (var s : finished) {
-                        long days = seriesService.watchlasting(s.getId());
+                        long days = seriesService.watchlasting(s.getId(), chatId);
                         sb.append(s.getName())
                                 .append(" (").append("сезонов: ").append(s.getSeason())
                                 .append(", заняло дней: ").append(days)
@@ -119,6 +151,13 @@ public class SeriesBot extends TelegramLongPollingBot {
                 }
             }
         }
+
+        var seriesOptional = seriesService.findByNameOptional(text, chatId);
+        if (seriesOptional.isPresent()) {
+            var s = seriesOptional.get();
+            sendMessage(chatId, "Остановились на серии " + s.getEpisode());
+        }
+
     }
 
     private void sendCommands(long chatId) throws TelegramApiException {
@@ -188,7 +227,7 @@ public class SeriesBot extends TelegramLongPollingBot {
             sendMessage(chatId, "У вас пока нет сериалов в процессе");
         } else {
             for (var s : inProgress) {
-                long days = seriesService.watchlasting(s.getId());
+                long days = seriesService.watchlasting(s.getId(), chatId);
                 SendMessage msg = new SendMessage();
                 msg.setChatId(chatId);
                 msg.setText(
@@ -208,26 +247,28 @@ public class SeriesBot extends TelegramLongPollingBot {
         if (data.startsWith("episode:")) {
             Long seriesId = Long.parseLong(data.split(":")[1]);
             seriesService.checkEpisode(seriesId,
-                    seriesService.findById(seriesId).getEpisode() + 1);
+                    seriesService.findById(seriesId).getEpisode() + 1,
+                    chatId);
             sendMessage(chatId, "Готово!");
         }
 
         if (data.startsWith("season:")) {
             Long seriesId = Long.parseLong(data.split(":")[1]);
             seriesService.checkSeason(seriesId,
-                    seriesService.findById(seriesId).getSeason() + 1);
+                    seriesService.findById(seriesId).getSeason() + 1,
+                    chatId);
             sendMessage(chatId, "Начали новый сезон!");
         }
 
         if (data.startsWith("finish:")) {
             Long seriesId = Long.parseLong(data.split(":")[1]);
-            seriesService.markFinished(seriesId);
+            seriesService.markFinished(seriesId, chatId);
             sendMessage(chatId, "Всё, сериал закончился.");
         }
 
         if (data.startsWith("delete:")) {
             Long seriesId = Long.parseLong(data.split(":")[1]);
-            seriesService.deleteSeries(seriesId);
+            seriesService.deleteSeries(seriesId, chatId);
             sendMessage(chatId, "Сериал удалён.");
         }
 
@@ -244,7 +285,7 @@ public class SeriesBot extends TelegramLongPollingBot {
                     for (var s : inProgress) {
                         SendMessage msg = new SendMessage();
                         msg.setChatId(chatId);
-                        long days = seriesService.watchlasting(s.getId());
+                        long days = seriesService.watchlasting(s.getId(), chatId);
                         msg.setText(s.getName() + " — Сезон " + s.getSeason() + ", Серия " + s.getEpisode() +
                                 "\nДней: " + days);
                         msg.setReplyMarkup(buildSeriesKeyboard(s.getId()));
@@ -259,7 +300,7 @@ public class SeriesBot extends TelegramLongPollingBot {
                 } else {
                     StringBuilder sb = new StringBuilder("Просмотренные сериалы:\n");
                     for (var s : finished) {
-                        long days = seriesService.watchlasting(s.getId());
+                        long days = seriesService.watchlasting(s.getId(), chatId);
                         sb.append(s.getName())
                                 .append(" (").append("сезонов: ").append(s.getSeason())
                                 .append(", заняло дней: ").append(days)
