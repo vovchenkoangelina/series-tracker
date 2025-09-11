@@ -1,23 +1,30 @@
 package series_tracker.bot;
 
+import jakarta.annotation.PostConstruct;
 import org.jvnet.hk2.annotations.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import series_tracker.service.SeriesService;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class SeriesBot extends TelegramLongPollingBot {
 
     private final SeriesService seriesService;
+
+    private final Map<Long, Boolean> waitingForSeriesName = new ConcurrentHashMap<>();
 
     public SeriesBot(SeriesService seriesService) {
         this.seriesService = seriesService;
@@ -57,55 +64,68 @@ public class SeriesBot extends TelegramLongPollingBot {
         String text = message.getText();
         long chatId = message.getChatId();
 
+        if (waitingForSeriesName.getOrDefault(chatId, false)) {
+            seriesService.addSeries(text, chatId);
+            sendMessage(chatId, "Сериал \"" + text + "\" добавлен. Приятного просмотра!");
+            waitingForSeriesName.remove(chatId);
+            return;
+        }
+
         if (text.toLowerCase().startsWith("начать")) {
             String name = text.substring(7);
             seriesService.addSeries(name, chatId);
             sendMessage(chatId, "Принято. Приятного просмотра!");
+            return;
         }
 
         if (text.contains("сезон")) {
             String name = text.substring(0, text.indexOf("сезон") - 1);
             int season = Integer.parseInt(text.substring(text.lastIndexOf(" ") + 1));
             seriesService.checkSeason(seriesService.findByName(name).getId(), season);
+            sendMessage(chatId, "Принято!");
+            return;
         }
 
         if (text.contains("серия")) {
             String name = text.substring(0, text.indexOf("серия") - 1);
             int episode = Integer.parseInt(text.substring(text.lastIndexOf(" ") + 1));
             seriesService.checkEpisode(seriesService.findByName(name).getId(), episode);
+            sendMessage(chatId, "Принято!");
+            return;
         }
 
         switch (text) {
             case "/start", "старт" -> {
-                sendMessage(chatId, "Привет! Этот бот запоминает, на какой серии сериала вы остановились. Используйте кнопки или напишите /команды, чтобы узнать, как добавлять новые сериалы и отмечать серии без кнопок.");
+                sendMessage(chatId, "Привет! Этот бот запоминает, на какой серии сериала вы остановились. Используйте кнопки или напишите /commands, чтобы узнать, как добавлять новые сериалы и отмечать серии без кнопок.");
                 sendMenu(chatId);
             }
             case "/menu", "меню" -> sendMenu(chatId);
             case "/list", "список" -> sendSeriesList(chatId);
-            case "/команды" -> sendCommands(chatId);
-            case "finished" -> {
+            case "/commands" -> sendCommands(chatId);
+            case "/finished" -> {
                 var finished = seriesService.getFinishedByChatId(chatId);
                 if (finished.isEmpty()) {
                     sendMessage(chatId, "Законченных сериалов пока нет");
                 } else {
-                    StringBuilder sb = new StringBuilder("Просмотренные сериалы:\n\n");
+                    StringBuilder sb = new StringBuilder("Просмотренные сериалы:\n");
                     for (var s : finished) {
                         long days = seriesService.watchlasting(s.getId());
                         sb.append(s.getName())
-                                .append(" (").append(days).append(" дн. в процессе)")
-                                .append("\n");
+                                .append(" (").append("сезонов: ").append(s.getSeason())
+                                .append(", заняло дней: ").append(days)
+                                .append(")\n");
                     }
                     sendMessage(chatId, sb.toString());
                 }
             }
-            default -> sendMessage(chatId, "Неизвестная команда. Используй /menu для выбора действий.");
         }
     }
 
     private void sendCommands(long chatId) throws TelegramApiException {
-        String text = "Чтобы добавить новый сериал, напишите слово \"начать\", пробел и название сериала. Например \"Начать Декстер\". " +
-                "Чтобы отметить серию, напишите название сериала и номер серии через пробел. Например \"Декстер 17\". " +
-                "Чтобы сменить сезон, напишите название сериала, пробел, слово \"сезон\" и номер сезона через пробел. Например \"Декстер сезон 4\".";
+        String text = "Чтобы добавить новый сериал, напишите слово \"начать\", пробел и название сериала.\nНапример \"Начать Декстер\"." +
+                "\n\nЧтобы отметить серию, напишите название сериала пробел, слово \"серия\" и номер сезона через пробел.\nНапример \"Декстер серия 17\"." +
+                "\n\nЧтобы сменить сезон, напишите название сериала, пробел, слово \"сезон\" и номер сезона через пробел.\nНапример \"Декстер сезон 4\"." +
+                "\n\nСлово \"меню\" вызывает меню с кнопками, слово \"список\" присылает список сериалов, которые вы сейчас смотрите.";
         sendMessage(chatId, text);
     }
 
@@ -121,7 +141,7 @@ public class SeriesBot extends TelegramLongPollingBot {
         addBtn.setCallbackData("add");
         InlineKeyboardButton listBtn = new InlineKeyboardButton("Сериалы в процессе");
         listBtn.setCallbackData("list");
-        InlineKeyboardButton finishedBtn = new InlineKeyboardButton("Законченные сериалы");
+        InlineKeyboardButton finishedBtn = new InlineKeyboardButton("Законченные");
         finishedBtn.setCallbackData("finished");
         sendInlineKeyboard(chatId, "Выберите действие:", List.of(List.of(addBtn, listBtn, finishedBtn)));
     }
@@ -149,8 +169,11 @@ public class SeriesBot extends TelegramLongPollingBot {
         InlineKeyboardButton finishBtn = new InlineKeyboardButton("Закончить");
         finishBtn.setCallbackData("finish:" + seriesId);
 
+        InlineKeyboardButton deleteBtn = new InlineKeyboardButton("Удалить");
+        deleteBtn.setCallbackData("delete:" + seriesId);
+
         List<List<InlineKeyboardButton>> rows = List.of(
-                List.of(episodeBtn, seasonBtn, finishBtn)
+                List.of(episodeBtn, seasonBtn, finishBtn, deleteBtn)
         );
 
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
@@ -158,10 +181,11 @@ public class SeriesBot extends TelegramLongPollingBot {
         return markup;
     }
 
+
     private void sendSeriesList(long chatId) throws TelegramApiException {
         var inProgress = seriesService.getInProgressByChatId(chatId);
         if (inProgress.isEmpty()) {
-            sendMessage(chatId, "У вас пока нет сериалов в процессе 📺");
+            sendMessage(chatId, "У вас пока нет сериалов в процессе");
         } else {
             for (var s : inProgress) {
                 long days = seriesService.watchlasting(s.getId());
@@ -169,7 +193,7 @@ public class SeriesBot extends TelegramLongPollingBot {
                 msg.setChatId(chatId);
                 msg.setText(
                         s.getName() + " — Сезон " + s.getSeason() + ", Серия " + s.getEpisode() +
-                                "\nСмотрю уже " + days + " дн."
+                                "\nДней: " + days
                 );
                 msg.setReplyMarkup(buildSeriesKeyboard(s.getId()));
                 execute(msg);
@@ -201,8 +225,17 @@ public class SeriesBot extends TelegramLongPollingBot {
             sendMessage(chatId, "Всё, сериал закончился.");
         }
 
+        if (data.startsWith("delete:")) {
+            Long seriesId = Long.parseLong(data.split(":")[1]);
+            seriesService.deleteSeries(seriesId);
+            sendMessage(chatId, "Сериал удалён.");
+        }
+
         switch (data) {
-            case "add" -> sendMessage(chatId, "Напиши: начать <название сериала>");
+            case "add" -> {
+                sendMessage(chatId, "Введите название сериала:");
+                waitingForSeriesName.put(chatId, true);
+            }
             case "list" -> {
                 var inProgress = seriesService.getInProgressByChatId(chatId);
                 if (inProgress.isEmpty()) {
@@ -211,7 +244,9 @@ public class SeriesBot extends TelegramLongPollingBot {
                     for (var s : inProgress) {
                         SendMessage msg = new SendMessage();
                         msg.setChatId(chatId);
-                        msg.setText(s.getName() + " — Сезон " + s.getSeason() + ", Серия " + s.getEpisode());
+                        long days = seriesService.watchlasting(s.getId());
+                        msg.setText(s.getName() + " — Сезон " + s.getSeason() + ", Серия " + s.getEpisode() +
+                                "\nДней: " + days);
                         msg.setReplyMarkup(buildSeriesKeyboard(s.getId()));
                         execute(msg);
                     }
@@ -224,12 +259,31 @@ public class SeriesBot extends TelegramLongPollingBot {
                 } else {
                     StringBuilder sb = new StringBuilder("Просмотренные сериалы:\n");
                     for (var s : finished) {
-                        sb.append(s.getName()).append("\n");
+                        long days = seriesService.watchlasting(s.getId());
+                        sb.append(s.getName())
+                                .append(" (").append("сезонов: ").append(s.getSeason())
+                                .append(", заняло дней: ").append(days)
+                                .append(")\n");
                     }
                     sendMessage(chatId, sb.toString());
                 }
             }
-            default -> sendMessage(chatId, "Неизвестное действие");
         }
     }
+
+    @PostConstruct
+    public void initCommands() {
+        List<BotCommand> commands = List.of(
+                new BotCommand("/start", "Начало работы с ботом"),
+                new BotCommand("/menu", "Открыть меню"),
+                new BotCommand("/commands", "Показать список команд")
+        );
+
+        try {
+            execute(new SetMyCommands(commands, null, null));
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
 }

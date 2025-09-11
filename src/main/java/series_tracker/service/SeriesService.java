@@ -74,7 +74,7 @@ public class SeriesService {
         Optional<Series> optionalSeries = repo.findById(id);
         if (optionalSeries.isPresent()) {
             Series series = optionalSeries.get();
-            return ChronoUnit.DAYS.between(series.getStart(), LocalDate.now());
+            return ChronoUnit.DAYS.between(series.getStart(), LocalDate.now()) + 1;
         }
         return 0;
     }
