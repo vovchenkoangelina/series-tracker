@@ -12,7 +12,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   app:
-    build: .
+    image: theyuh/series-tracker-app:latest
     ports:
       - "8080:8080"
     environment:
